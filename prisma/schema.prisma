@@ -1,0 +1,202 @@
+// Fielum — Multi-Tenant Field Service Management (FSM)
+// Clean architecture: Company -> Customer -> Job
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ────────────────────────────────────────────────────────────
+
+enum CompanyStatus {
+  trial
+  active
+  suspended
+  cancelled
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  DISPATCHER
+  TECHNICIAN
+}
+
+enum Plan {
+  starter
+  professional
+  business
+}
+
+enum JobStatus {
+  scheduled
+  confirmed
+  in_progress
+  completed
+  cancelled
+}
+
+enum Priority {
+  low
+  normal
+  high
+  urgent
+}
+
+// ── Tenant ───────────────────────────────────────────────────────────
+
+model Company {
+  id            String        @id @default(cuid())
+  name          String
+  slug          String        @unique
+  status        CompanyStatus @default(trial)
+  industry      String        @default("general")
+  currency      String        @default("EUR")
+  taxRate       Decimal       @default(21.00)
+  jobPrefix     String        @default("JOB-")
+  invoicePrefix String        @default("INV-")
+  locale        String        @default("es")
+  timezone      String        @default("Europe/Madrid")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  users        User[]
+  customers    Customer[]
+  jobs         Job[]
+  subscription Subscription?
+}
+
+// ── Users & Technicians ──────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  authId       String   @unique // Supabase Auth UID
+  email        String   @unique
+  name         String   @default("")
+  phone        String   @default("")
+  role         UserRole @default(TECHNICIAN)
+  isSuperAdmin Boolean  @default(false)
+  avatarUrl    String?
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  jobsAssigned     Job[]
+  invitationTokens InvitationToken[]
+
+  @@index([companyId])
+  @@index([authId])
+}
+
+// ── Billing & Onboarding ─────────────────────────────────────────────
+
+model Subscription {
+  id               String    @id @default(cuid())
+  companyId        String    @unique
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stripeCustomerId String?
+  stripeSubId      String?
+  plan             Plan      @default(starter)
+  status           String    @default("active")
+  currentPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+}
+
+model InvitationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// ── Customers ────────────────────────────────────────────────────────
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @default("")
+  phone     String   @default("")
+  address   String   @default("")
+  city      String   @default("")
+  state     String   @default("")
+  zip       String   @default("")
+  notes     String   @default("")
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([companyId])
+}
+
+// ── Jobs & Checklists ────────────────────────────────────────────────
+
+model Job {
+  id              String    @id @default(cuid())
+  identifier      String    // e.g. JOB-1001
+  status          JobStatus @default(scheduled)
+  priority        Priority  @default(normal)
+  serviceType     String    @default("General") // Clima, Electricidad, Fontanería, etc.
+  scheduledDate   DateTime
+  scheduledTime   String    @default("09:00")
+  durationMinutes Int       @default(60)
+  address         String    // Dirección de ejecución
+  notes           String    @default("")
+  completionNotes String    @default("")
+  
+  // Relations
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  technicianId String?
+  technician   User?    @relation(fields: [technicianId], references: [id], onDelete: SetNull)
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Completion details
+  customerSignature String?
+  signedByName      String?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  checklist ChecklistItem[]
+  photos    JobPhoto[]
+
+  @@index([companyId])
+  @@index([technicianId])
+  @@index([customerId])
+  @@index([status])
+  @@index([companyId, scheduledDate])
+  @@index([companyId, technicianId])
+}
+
+model ChecklistItem {
+  id      String  @id @default(cuid())
+  jobId   String
+  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  label   String
+  checked Boolean @default(false)
+
+  @@index([jobId])
+}
+
+model JobPhoto {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  url       String
+  caption   String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+}
