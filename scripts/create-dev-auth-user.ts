@@ -31,7 +31,7 @@ let authUser: any = null;
     authUser = created.user;
   } else {
     // Si ya existía, buscarlo en la lista de usuarios
-    const { data: listData, error: listErr } = await supabase.auth.admin.listUsers(1, 1000);
+    const { data: listData, error: listErr } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (listErr) throw listErr;
     authUser = listData?.users?.find((u) => u.email === email);
     if (!authUser) throw new Error('User not found after listing');
